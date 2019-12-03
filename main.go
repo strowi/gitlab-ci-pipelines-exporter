@@ -5,7 +5,7 @@ package main
 
 import (
 	"fmt"
-	// "strings"
+	"strings"
 	"log"
 	"net/http"
 	"os"
@@ -100,13 +100,6 @@ func getGitlabInfo() {
 
 	}
 
-	// listregistryOptions
-	optRegistry := &gitlab.ListRegistryRepositoriesOptions{
-	}
-
-	optRegistryTag := &gitlab.ListRegistryRepositoryTagsOptions{
-	}
-
 	for {
 		for{
 
@@ -118,46 +111,28 @@ func getGitlabInfo() {
 			// List all the projects we've found so far.
 			for _, project := range projects {
 
-				registryRepositories, _, _ := client.ContainerRegistry.ListRegistryRepositories(project.ID, optRegistry)
+			pipelines, _, _ := client.Pipelines.ListProjectPipelines(project.ID, &gitlab.ListProjectPipelinesOptions{})
+			var lastPipeline *gitlab.Pipeline
 
+			if len(pipelines) != 0 {
 
-				// handle registry metrics
-				for _, registryImage := range registryRepositories {
+				lastPipeline, _, _ = client.Pipelines.GetPipeline(project.ID, pipelines[0].ID)
+				lastRunDuration.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, strconv.Itoa(pipelines[0].ID)).Set(float64(lastPipeline.Duration))
 
-					registryRepositoryTags, _, _ := client.ContainerRegistry.ListRegistryRepositoryTags(project.ID, registryImage.ID, optRegistryTag)
-
-
-					for _, registryImageTag := range registryRepositoryTags {
-
-						fmt.Println(project.Path,": ",registryImageTag.Path," ",registryImageTag.Name, registryImageTag.TotalSize)
+				for _, s := range []string{"success", "failed", "running"} {
+					if s == lastPipeline.Status {
+						status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(1)
+					} else {
+						status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(0)
 					}
 				}
 
-
-
-
-			// pipelines, _, _ := client.Pipelines.ListProjectPipelines(project.ID, &gitlab.ListProjectPipelinesOptions{})
-			// var lastPipeline *gitlab.Pipeline
-
-			// if len(pipelines) != 0 {
-
-			// 	lastPipeline, _, _ = client.Pipelines.GetPipeline(project.ID, pipelines[0].ID)
-			// 	lastRunDuration.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, strconv.Itoa(pipelines[0].ID)).Set(float64(lastPipeline.Duration))
-
-			// 	for _, s := range []string{"success", "failed", "running"} {
-			// 		if s == lastPipeline.Status {
-			// 			status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(1)
-			// 		} else {
-			// 			status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(0)
-			// 		}
-			// 	}
-
-			// 	timeSinceLastRun.WithLabelValues(
-			// 		strings.Replace(project.PathWithNamespace, "/", "-", -1),
-			// 		pipelines[0].Ref,
-			// 		strconv.Itoa(pipelines[0].ID)).Set(
-			// 		float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
-			// 	}
+				timeSinceLastRun.WithLabelValues(
+					strings.Replace(project.PathWithNamespace, "/", "-", -1),
+					pipelines[0].Ref,
+					strconv.Itoa(pipelines[0].ID)).Set(
+					float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
+				}
 
 			}
 
