@@ -4,18 +4,6 @@ variables:
   # Please edit to your GitLab project
   REPO_NAME: $CI_SERVER_HOST/$CI_PROJECT_DIR
 
-
-# The problem is that to be able to use go get, one needs to put
-# the repository in the $GOPATH. So for example if your gitlab domain
-# is gitlab.com, and that your repository is namespace/project, and
-# the default GOPATH being /go, then you'd need to have your
-# repository in /go/src/gitlab.com/namespace/project
-# Thus, making a symbolic link corrects this.
-before_script:
-  - mkdir -p $GOPATH/src/$(dirname $REPO_NAME)
-  - ln -svf $CI_PROJECT_DIR $GOPATH/src/$REPO_NAME
-  - cd $GOPATH/src/$REPO_NAME
-
 stages:
   - test
   - compile
@@ -61,9 +49,82 @@ release:
   services:
     - docker:dind
   script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    - docker pull "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
-    - docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$CI_REGISTRY_IMAGE"
-    - docker push "$CI_REGISTRY_IMAGE"
+    - release_container "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"  # push as :latest
+    - docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "strowi/gitlab-ci-exporter"
+    - docker push "strowi/easyepg"
   only:
     - master
+
+
+.devops: &devops |
+
+  # wrapper around container building
+  # build
+  #   - builds default Dockerfile -> reponame:latest
+  # build $1
+  #   - builds Dockerfile.$1 -> reponame:$1
+  #
+  function build() {
+
+    if [[ -n "$DOCKER_TOKEN" ]]; then
+      echo "Logging in to Docker Registry with token..."
+      docker login -u "strowi" -p "$DOCKER_TOKEN" "docker.io"
+      echo ""
+    fi
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging in to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+      echo ""
+    fi
+
+    if [[ -n "$2" ]]; then
+      echo "Building docker image from $2 / Dockerfile.$1 ..."
+      docker build --cache-from $CI_REGISTRY_IMAGE/$2:${CI_COMMIT_REF_SLUG}_${1} -t "$CI_REGISTRY_IMAGE/$2:${CI_COMMIT_REF_SLUG}_${1}" -f Dockerfile.$1 $2
+      echo "Pushing to GitLab Container Registry..."
+      docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG_$1"
+
+    elif [[ -n "$1" ]]; then
+      echo "Building docker image from Dockerfile.$1 ..."
+      docker build --cache-from $CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}_${1} -t "$CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}_${1}" -f Dockerfile.$1 .
+      echo "Pushing to GitLab Container Registry..."
+      docker push "$CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG}_${1}"
+    else
+      echo "Building docker image from Dockerfile ..."
+      docker build --cache-from $CI_REGISTRY_IMAGE:${CI_COMMIT_REF_SLUG} -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+      echo "Pushing to GitLab Container Registry..."
+      docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    fi
+    echo ""
+  }
+
+  function release_container() {
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+      echo ""
+    fi
+
+    if [[ -n "$DOCKER_TOKEN" ]]; then
+      echo "Logging in to Docker Registry with token..."
+      docker login -u "strowi" -p "$DOCKER_TOKEN" "docker.io"
+      echo ""
+    fi
+
+    docker pull "$1"
+    docker tag "$1" "$CI_REGISTRY_IMAGE"
+    docker push "$CI_REGISTRY_IMAGE"
+  }
+
+
+# The problem is that to be able to use go get, one needs to put
+# the repository in the $GOPATH. So for example if your gitlab domain
+# is gitlab.com, and that your repository is namespace/project, and
+# the default GOPATH being /go, then you'd need to have your
+# repository in /go/src/gitlab.com/namespace/project
+# Thus, making a symbolic link corrects this.
+before_script:
+  - mkdir -p $GOPATH/src/$(dirname $REPO_NAME)
+  - ln -svf $CI_PROJECT_DIR $GOPATH/src/$REPO_NAME
+  - cd $GOPATH/src/$REPO_NAME
+  - *devops
