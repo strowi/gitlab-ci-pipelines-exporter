@@ -1,0 +1,10 @@
+version: '2'
+
+services:
+  gitlab-ci-exporter:
+    image: hub.chefkoch.net/sys/monitoring/gitlab-ci-exporter:master
+    restart: always
+    ports:
+      - 9999:9999
+    env_file:
+      - .env
