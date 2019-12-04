@@ -5,11 +5,11 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,6 +47,14 @@ var (
 		},
 		[]string{"projectWithNamespace", "ref", "status", "id"},
 	)
+
+	registryRepositoryTagCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "gitlab_registry_tags_total",
+			Help: "GitLab Registry Tag count",
+		},
+		[]string{"projectWithNamespace", "registryRepository"},
+	)
 )
 
 // main init configuration
@@ -77,6 +85,7 @@ func init() {
 	prometheus.MustRegister(timeSinceLastRun)
 	prometheus.MustRegister(lastRunDuration)
 	prometheus.MustRegister(status)
+	prometheus.MustRegister(registryRepositoryTagCount)
 }
 
 // getGitlabInfo get all needed informations from gitlab instance and update some metrics
@@ -85,53 +94,84 @@ func getGitlabInfo() {
 	client := gitlab.NewClient(nil, settings.Gitlab.Token)
 	client.SetBaseURL(settings.Gitlab.Url)
 
-	trueVal := true
+	trueVal := false
 	falseVal := false
 
 	// get all projects
 	opt := &gitlab.ListProjectsOptions{
 		Archived: &falseVal,
-		Simple: 	&trueVal,
-		Owned: 		&settings.Gitlab.Owned,
+		Simple:   &trueVal,
+		Owned:    &settings.Gitlab.Owned,
 		ListOptions: gitlab.ListOptions{
 			PerPage: 50,
 			Page:    1,
 		},
-
 	}
 
 	for {
-		for{
+		for {
 
 			projects, resp, err := client.Projects.ListProjects(opt)
 			if err != nil {
 				log.Fatalln(err)
 			}
 
-			// List all the projects we've found so far.
+			// list all projects we've found
 			for _, project := range projects {
 
-			pipelines, _, _ := client.Pipelines.ListProjectPipelines(project.ID, &gitlab.ListProjectPipelinesOptions{})
-			var lastPipeline *gitlab.Pipeline
+				// list all pipelines within $project
+				pipelines, _, _ := client.Pipelines.ListProjectPipelines(project.ID, &gitlab.ListProjectPipelinesOptions{})
+				// TODO: ??
+				var lastPipeline *gitlab.Pipeline
 
-			if len(pipelines) != 0 {
+				// pipeline metrics
+				if len(pipelines) != 0 {
 
-				lastPipeline, _, _ = client.Pipelines.GetPipeline(project.ID, pipelines[0].ID)
-				lastRunDuration.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, strconv.Itoa(pipelines[0].ID)).Set(float64(lastPipeline.Duration))
+					// get duration of last pipeline
+					lastPipeline, _, _ = client.Pipelines.GetPipeline(project.ID, pipelines[0].ID)
+					lastRunDuration.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, strconv.Itoa(pipelines[0].ID)).Set(float64(lastPipeline.Duration))
 
-				for _, s := range []string{"success", "failed", "running"} {
-					if s == lastPipeline.Status {
-						status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(1)
-					} else {
-						status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(0)
+					// get status of last pipeline
+					for _, s := range []string{"success", "failed", "running"} {
+						if s == lastPipeline.Status {
+							status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(1)
+						} else {
+							status.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), pipelines[0].Ref, s, strconv.Itoa(pipelines[0].ID)).Set(0)
+						}
 					}
+
+					// get last run of pipeline
+					timeSinceLastRun.WithLabelValues(
+						strings.Replace(project.PathWithNamespace, "/", "-", -1),
+						pipelines[0].Ref,
+						strconv.Itoa(pipelines[0].ID)).Set(
+						float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
 				}
 
-				timeSinceLastRun.WithLabelValues(
-					strings.Replace(project.PathWithNamespace, "/", "-", -1),
-					pipelines[0].Ref,
-					strconv.Itoa(pipelines[0].ID)).Set(
-					float64(time.Since(*lastPipeline.CreatedAt).Round(time.Second).Seconds()))
+				// container-registry metrics
+				if project.ContainerRegistryEnabled {
+
+					// get all registryRepositories
+					registryRepositories, _, err := client.ContainerRegistry.ListRegistryRepositories(project.ID, &gitlab.ListRegistryRepositoriesOptions{})
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					// iterate all registryRepositories
+					for _, registryRepository := range registryRepositories {
+
+						// get all tags per repository
+						registryRepositoryTag, _, err := client.ContainerRegistry.ListRegistryRepositoryTags(project.ID, registryRepository.ID, &gitlab.ListRegistryRepositoryTagsOptions{})
+						if err != nil {
+							log.Fatalln(err)
+						}
+
+						// debug
+						// fmt.Println("id: ", registryRepository.ID, "path:", registryRepository.Path, "count: ", float64(len(registryRepositoryTag)))
+
+						// expose metric for tag-count per registryRepository
+						registryRepositoryTagCount.WithLabelValues(strings.Replace(project.PathWithNamespace, "/", "-", -1), registryRepository.Path).Set(float64(len(registryRepositoryTag)))
+					}
 				}
 
 			}
