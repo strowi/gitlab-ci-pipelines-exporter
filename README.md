@@ -6,10 +6,10 @@ useful metrics from gitlab:
 * gitlab_ci_pipeline_last_run_duration_seconds
 * gitlab_ci_pipeline_time_since_last_run_seconds
 * gitlab_ci_pipeline_status
+* gitlab_registry_tags_total
 
 ## TODOs
 
-* registry metrics (count of repos/image-tags)
 * .. suggestions..?
 
 ```

@@ -2,7 +2,7 @@ version: '2'
 
 services:
   gitlab-ci-exporter:
-    image: hub.chefkoch.net/sys/monitoring/gitlab-ci-exporter:master
+    image: registry.gitlab.com/strowi/gitlab-ci-exporter:latest
     restart: always
     ports:
       - 9999:9999

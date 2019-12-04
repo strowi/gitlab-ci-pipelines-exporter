@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  digest = "1:ce6bda010b2770b43b42eab23771a028742abae5ea91cb3495e99f482f8ab45d"
+  name = "github.com/Labbs/gitlab-ci-pipelines-exporter"
+  packages = ["settings"]
+  pruneopts = "UT"
+  revision = "e2ed35d1cfe1f74af27d66366ea45cde030c5195"
+  version = "v1.1"
+
+[[projects]]
   branch = "master"
   digest = "1:d6afaeed1502aa28e80a4ed0981d570ad91b2579193404256ce672ed0a609e0d"
   name = "github.com/beorn7/perks"
@@ -87,12 +95,12 @@
   version = "v1.20.0"
 
 [[projects]]
-  digest = "1:dd0d6cfb7bd760235de8096c3583c4007cf3e252077b329c59c71ee855f184fb"
+  digest = "1:b5712d3cd9ebee0caff53dc3c14aedad7fdced06387b4d8e4076e7220cd4f1e7"
   name = "github.com/xanzy/go-gitlab"
   packages = ["."]
   pruneopts = "UT"
-  revision = "ee3313ca5478c4786248d63dd75e4cd8e1fad2db"
-  version = "v0.19.0"
+  revision = "f74501cbc643b2731fcdfb29ca53230bbb2b935a"
+  version = "v0.22.2"
 
 [[projects]]
   branch = "master"
@@ -136,6 +144,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/Labbs/gitlab-ci-pipelines-exporter/settings",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/urfave/cli",
